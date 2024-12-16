@@ -1,3 +1,4 @@
+# imports
 import pandas as pd
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -23,17 +24,19 @@ warnings.filterwarnings('ignore')
 
 class EnterpriseLogClustering:
     def __init__(self, custom_patterns=None):
+        # models
         self.bert_model = SentenceTransformer('all-MiniLM-L6-v2')
         self.domain_bert = SentenceTransformer('sentence-transformers/distilbert-base-nli-mean-tokens')
         self.topic_model = BERTopic(language="english")
         
+        # storage
         self.vectorizers = {}
         self.reducers = {}
         self.scalers = {}
-        
         self.clustering_models = {}
         self.best_model = None
         
+        # patterns
         self.technical_patterns = {
             'error_codes': r'(?i)(error|err|fail|exception)[:\s]+[A-Z0-9\-_]+',
             'hex_codes': r'0x[0-9A-Fa-f]+',
@@ -54,7 +57,7 @@ class EnterpriseLogClustering:
         self.load_domain_knowledge()
 
     def load_domain_knowledge(self):
-        """Load and maintain domain-specific knowledge."""
+        # terms
         self.domain_terms = {
             'hardware': [
                 'cpu', 'memory', 'disk', 'network', 'hardware', 'device', 'port',
@@ -74,6 +77,7 @@ class EnterpriseLogClustering:
             ]
         }
         
+        # weights
         self.term_weights = {}
         for category, terms in self.domain_terms.items():
             weight = 2.0 if category in ['errors', 'hardware'] else 1.5
@@ -81,7 +85,7 @@ class EnterpriseLogClustering:
                 self.term_weights[term] = weight
 
     def extract_temporal_patterns(self, text):
-        """Extract and analyze temporal patterns in logs."""
+        # time stuff
         temporal_info = {
             'timestamps': [],
             'durations': [],
@@ -98,7 +102,7 @@ class EnterpriseLogClustering:
         return temporal_info
 
     def create_hybrid_embeddings(self, texts):
-        """Create sophisticated hybrid embeddings."""
+        # embeddings init
         embeddings = {
             'bert': self.bert_model.encode(texts),
             'domain_bert': self.domain_bert.encode(texts),
@@ -106,6 +110,7 @@ class EnterpriseLogClustering:
             'nmf': None
         }
         
+        # tfidf
         self.vectorizers['tfidf'] = TfidfVectorizer(
             max_features=5000,
             ngram_range=(1, 3),
@@ -114,12 +119,15 @@ class EnterpriseLogClustering:
         )
         tfidf_matrix = self.vectorizers['tfidf'].fit_transform(texts)
         
+        # nmf
         self.reducers['nmf'] = NMF(n_components=50, random_state=42)
         embeddings['nmf'] = self.reducers['nmf'].fit_transform(tfidf_matrix)
         
+        # svd
         self.reducers['tfidf'] = TruncatedSVD(n_components=100)
         embeddings['tfidf'] = self.reducers['tfidf'].fit_transform(tfidf_matrix)
         
+        # combine
         combined = np.hstack([
             embeddings['bert'],
             embeddings['domain_bert'],
@@ -127,9 +135,11 @@ class EnterpriseLogClustering:
             embeddings['nmf']
         ])
         
+        # scale
         self.scalers['combined'] = StandardScaler()
         scaled_embeddings = self.scalers['combined'].fit_transform(combined)
         
+        # umap
         self.reducers['umap'] = umap.UMAP(
             n_neighbors=15,
             min_dist=0.1,
@@ -141,7 +151,7 @@ class EnterpriseLogClustering:
         return final_embeddings
 
     def dynamic_weighting(self, json_str):
-        """Dynamically weight JSON components based on content."""
+        # weight json
         try:
             data = json.loads(json_str)
             weighted_components = []
@@ -155,7 +165,7 @@ class EnterpriseLogClustering:
                     if re.search(pattern, text):
                         score *= 1.5
                 return score
-
+            
             if 'info' in data:
                 importance = calculate_importance(data['info'])
                 weighted_components.extend([data['info']] * int(4 * importance))
@@ -177,11 +187,12 @@ class EnterpriseLogClustering:
             return json_str
 
     def find_optimal_clusters(self, embeddings):
-        """Find optimal clustering parameters using multiple methods."""
+        # init scores
         best_score = float('-inf')
         best_labels = None
         best_model = None
         
+        # configs
         clustering_configs = {
             'hdbscan': [
                 {'min_cluster_size': size, 'min_samples': samples}
@@ -199,6 +210,7 @@ class EnterpriseLogClustering:
             ]
         }
         
+        # try all
         for algo_name, configs in clustering_configs.items():
             for config in configs:
                 if algo_name == 'hdbscan':
@@ -225,7 +237,7 @@ class EnterpriseLogClustering:
         return best_labels, best_model
 
     def analyze_cluster_patterns(self, texts, labels):
-        """Perform detailed pattern analysis for each cluster."""
+        # pattern storage
         cluster_patterns = defaultdict(lambda: {
             'common_patterns': Counter(),
             'temporal_patterns': [],
@@ -234,6 +246,7 @@ class EnterpriseLogClustering:
             'similar_issues': []
         })
         
+        # analyze each
         for text, label in zip(texts, labels):
             if label == -1:
                 continue
@@ -255,26 +268,23 @@ class EnterpriseLogClustering:
         return dict(cluster_patterns)
 
     def fit_transform(self, texts):
-        """Main clustering method with comprehensive analysis."""
+        # main pipeline
         weighted_texts = [self.dynamic_weighting(text) for text in texts]
-        
         embeddings = self.create_hybrid_embeddings(weighted_texts)
-        
         labels, best_model = self.find_optimal_clusters(embeddings)
         self.best_model = best_model
-        
         cluster_patterns = self.analyze_cluster_patterns(texts, labels)
-        
         return labels, cluster_patterns
 
 def cluster_enterprise_logs(df, summary_column='TLDRCOLUMN', custom_patterns=None):
-    """Main function for enterprise-grade log clustering."""
+    # init
     clusterer = EnterpriseLogClustering(custom_patterns)
     
+    # cluster
     labels, patterns = clusterer.fit_transform(df[summary_column].tolist())
-    
     df['cluster_id'] = labels
     
+    # report
     cluster_report = {
         'cluster_patterns': patterns,
         'model_info': {
@@ -292,3 +302,10 @@ def cluster_enterprise_logs(df, summary_column='TLDRCOLUMN', custom_patterns=Non
     }
     
     return df, cluster_report
+
+# usage
+df = pd.read_csv('logs.csv')  # file
+clustered_df, report = cluster_enterprise_logs(df, summary_column='TLDRCOLUMN')
+print(f"Found {report['model_info']['num_clusters']} clusters")
+print(f"Stats: {report['statistics']}")
+clustered_df.to_csv('results.csv', index=False)  # saves results
